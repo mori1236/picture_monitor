@@ -1,0 +1,22 @@
+# .NET Build Results & Native AOT outputs
+[Bb]in/
+[Oo]bj/
+[Ll]ogs/
+[Tt]emp/
+
+# Visual Studio & VS Code workspace files
+.vs/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Operating System generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
