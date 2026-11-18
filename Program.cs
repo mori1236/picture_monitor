@@ -14,7 +14,9 @@ var imageDirectory = Path.GetFullPath(
     Path.Combine(AppContext.BaseDirectory, "images"));
 Directory.CreateDirectory(imageDirectory);
 var imageLock = new object();
-using var viewer = new ImageViewer(app.Logger);
+var previewDirectory = Path.Combine(imageDirectory, ".previews");
+Directory.CreateDirectory(previewDirectory);
+using var viewer = new ImageViewer(previewDirectory, app.Logger);
 var activePath = Path.Combine(imageDirectory, ".active-image");
 var activeImage = File.Exists(activePath) ? File.ReadAllText(activePath).Trim() : null;
 
@@ -25,13 +27,21 @@ string[] RecentImages() => Directory.EnumerateFiles(imageDirectory)
     .OrderDescending(StringComparer.Ordinal)
     .ToArray();
 
-void SelectImage(string name)
+void SelectImage(string name, string displayPath)
 {
     var pending = activePath + ".tmp";
     File.WriteAllText(pending, name);
     File.Move(pending, activePath, overwrite: true);
     activeImage = name;
-    viewer.Show(Path.Combine(imageDirectory, name));
+    viewer.Show(displayPath);
+}
+
+void RemoveDisplayFrames(string name)
+{
+    foreach (var path in Directory.EnumerateFiles(previewDirectory, $"*frame-{name}-*"))
+    {
+        File.Delete(path);
+    }
 }
 
 app.UseDefaultFiles();
@@ -61,8 +71,16 @@ app.MapPost("/api/images/{name}/select", (string name, HttpContext context) =>
             return Results.NotFound();
         }
 
-        SelectImage(name);
-        return Results.NoContent();
+        try
+        {
+            SelectImage(name, viewer.Prepare(Path.Combine(imageDirectory, name), name));
+            return Results.NoContent();
+        }
+        catch (Exception ex) when (ex is ImageMagick.MagickException or InvalidDataException)
+        {
+            app.Logger.LogWarning(ex, "Could not prepare saved image {Image}", name);
+            return Results.UnprocessableEntity();
+        }
     }
 });
 
@@ -78,6 +96,36 @@ app.MapGet("/images/{name}", (string name) =>
         var stream = File.Open(Path.Combine(imageDirectory, name), FileMode.Open,
             FileAccess.Read, FileShare.Read | FileShare.Delete);
         return Results.File(stream, name.EndsWith(".png") ? "image/png" : "image/jpeg");
+    }
+});
+
+app.MapGet("/previews/{size}/{name}", (string size, string name, HttpContext context) =>
+{
+    var maximumEdge = size switch { "thumb" => 320, "screen" => 900, _ => 0 };
+    lock (imageLock)
+    {
+        if (maximumEdge == 0 || !RecentImages().Take(5).Contains(name, StringComparer.Ordinal))
+        {
+            return Results.NotFound();
+        }
+
+        var path = Path.Combine(previewDirectory, $"{size}-{name}.jpg");
+        if (!File.Exists(path))
+        {
+            var preview = ImagePreview.Create(Path.Combine(imageDirectory, name), maximumEdge);
+            if (preview is null)
+            {
+                return Results.UnprocessableEntity();
+            }
+
+            var pending = path + ".tmp";
+            File.WriteAllBytes(pending, preview);
+            File.Move(pending, path, overwrite: true);
+        }
+
+        context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+        return Results.File(File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete),
+            "image/jpeg");
     }
 });
 
@@ -118,14 +166,17 @@ app.MapPost("/upload", async (HttpContext context) =>
 
             var name = $"{next:D19}{extension}";
             var savedPath = Path.Combine(imageDirectory, name);
-            File.Move(temporaryPath, savedPath);
             try
             {
-                SelectImage(name);
+                var displayPath = viewer.Prepare(temporaryPath, name);
+                File.Move(temporaryPath, savedPath);
+                SelectImage(name, displayPath);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                or ImageMagick.MagickException or InvalidDataException)
             {
                 File.Delete(savedPath);
+                RemoveDisplayFrames(name);
                 throw;
             }
             foreach (var old in existing.Skip(4))
@@ -133,6 +184,9 @@ app.MapPost("/upload", async (HttpContext context) =>
                 try
                 {
                     File.Delete(Path.Combine(imageDirectory, old));
+                    File.Delete(Path.Combine(previewDirectory, $"thumb-{old}.jpg"));
+                    File.Delete(Path.Combine(previewDirectory, $"screen-{old}.jpg"));
+                    RemoveDisplayFrames(old);
                 }
                 catch (IOException ex)
                 {
@@ -151,6 +205,11 @@ app.MapPost("/upload", async (HttpContext context) =>
     {
         return Results.Problem("The upload could not be read.", statusCode: ex.StatusCode);
     }
+    catch (Exception ex) when (ex is ImageMagick.MagickException or InvalidDataException)
+    {
+        app.Logger.LogWarning(ex, "Could not prepare the uploaded image for display");
+        return Results.Problem("The image could not be prepared for display.", statusCode: 422);
+    }
     finally
     {
         File.Delete(temporaryPath);
@@ -165,8 +224,45 @@ if (!startupImages.Contains(activeImage, StringComparer.Ordinal))
 
 if (activeImage is { } savedImage)
 {
-    viewer.Show(Path.Combine(imageDirectory, savedImage));
+    try
+    {
+        viewer.Show(viewer.Prepare(Path.Combine(imageDirectory, savedImage), savedImage));
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+        or ImageMagick.MagickException or InvalidDataException)
+    {
+        app.Logger.LogWarning(ex, "Could not restore saved image {Image}", savedImage);
+    }
 }
+
+app.Lifetime.ApplicationStarted.Register(() => _ = Task.Run(() =>
+{
+    foreach (var name in startupImages)
+    {
+        if (app.Lifetime.ApplicationStopping.IsCancellationRequested)
+        {
+            break;
+        }
+
+        lock (imageLock)
+        {
+            if (!RecentImages().Take(5).Contains(name, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            try
+            {
+                viewer.Prepare(Path.Combine(imageDirectory, name), name);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                or ImageMagick.MagickException or InvalidDataException)
+            {
+                app.Logger.LogWarning(ex, "Could not prepare existing image {Image}", name);
+            }
+        }
+    }
+}));
 
 app.Run();
 

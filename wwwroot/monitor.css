@@ -28,4 +28,20 @@ button { padding: .55rem 1rem; font: inherit; cursor: pointer; }
 #recent { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: clamp(.3rem, 2vw, .8rem); padding: 0; list-style: none; }
 #recent button { display: block; width: 100%; padding: 2px; border: 2px solid transparent; border-radius: .35rem; background: #283641; }
 #recent button[aria-pressed="true"] { border-color: #9bd9e3; }
+#recent button.pending { position: relative; opacity: .65; }
+#recent button.pending::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 1.15rem;
+  height: 1.15rem;
+  border: 2px solid #fff;
+  border-inline-end-color: transparent;
+  border-radius: 50%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  #recent button.pending::after { animation: waiting .7s linear infinite; }
+}
+@keyframes waiting { to { transform: rotate(1turn); } }
 #recent img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: .2rem; }

@@ -9,8 +9,8 @@ const maxImageBytes = 50_000_000;
 const imageTooLarge = 'התמונה גדולה מ־50 MB.';
 let busy = false;
 
-function imageUrl(name) {
-  return '/images/' + encodeURIComponent(name);
+function previewUrl(size, name) {
+  return '/previews/' + size + '/' + encodeURIComponent(name);
 }
 
 function setBusy(value) {
@@ -26,7 +26,7 @@ async function refresh() {
   const { activeImage, recentImages } = await response.json();
   active.hidden = !activeImage;
   empty.hidden = Boolean(activeImage);
-  if (activeImage) active.src = imageUrl(activeImage);
+  if (activeImage) active.src = previewUrl('screen', activeImage);
   recent.replaceChildren(...recentImages.map((name, index) => {
     const item = document.createElement('li');
     const choice = document.createElement('button');
@@ -35,7 +35,7 @@ async function refresh() {
     choice.setAttribute('aria-label', 'הצגת תמונה ' + (index + 1));
     choice.setAttribute('aria-pressed', String(name === activeImage));
     const image = document.createElement('img');
-    image.src = imageUrl(name);
+    image.src = previewUrl('thumb', name);
     image.alt = '';
     choice.append(image);
     item.append(choice);
@@ -49,6 +49,8 @@ recent.addEventListener('click', async event => {
 
   const name = choice.dataset.image;
   setBusy(true);
+  choice.classList.add('pending');
+  status.textContent = 'מכין את התמונה ומחליף את התצוגה…';
   try {
     const response = await fetch('/api/images/' + encodeURIComponent(name) + '/select', {
       method: 'POST',
@@ -61,6 +63,7 @@ recent.addEventListener('click', async event => {
   } catch {
     status.textContent = 'לא ניתן לעדכן את הבחירה בדף. אפשר לרענן ולנסות שוב.';
   } finally {
+    choice.classList.remove('pending');
     setBusy(false);
   }
 });
@@ -70,7 +73,7 @@ form.addEventListener('submit', async event => {
   if (busy) return;
   const file = input.files[0];
   setBusy(true);
-  status.textContent = 'מעלה תמונה…';
+  status.textContent = 'מעלה את התמונה ומכין אותה לתצוגה…';
   try {
     if (file.size > maxImageBytes) {
       status.textContent = imageTooLarge;
