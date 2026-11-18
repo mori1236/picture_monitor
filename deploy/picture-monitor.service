@@ -1,0 +1,23 @@
+[Unit]
+Description=Picture Monitor web server
+After=network.target
+
+[Service]
+Type=exec
+User=orangepi
+SupplementaryGroups=video
+WorkingDirectory=/opt/picture-monitor
+StateDirectory=picture-monitor
+Environment=PictureMonitor__ImageDirectory=/var/lib/picture-monitor
+Environment=TERM=linux
+StandardInput=tty-force
+TTYPath=/dev/tty1
+TTYReset=true
+StandardOutput=journal
+ExecStart=/opt/picture-monitor/picture_monitor --urls http://0.0.0.0:5159
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

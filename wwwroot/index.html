@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Picture Monitor</title>
+  <link rel="stylesheet" href="/monitor.css">
+  <script type="module" src="/monitor.js"></script>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Picture Monitor</h1>
+    </header>
+    <section>
+      <h2>העלאת תמונה</h2>
+      <form id="upload">
+        <label for="image">בחר תמונת JPEG או PNG, עד 50 MB</label>
+        <div class="controls">
+          <input id="image" type="file" accept="image/jpeg,image/png" required>
+          <button>העלאה והצגה</button>
+        </div>
+        <p id="status" role="status"></p>
+      </form>
+    </section>
+    <section class="preview">
+      <h2>מוצגת עכשיו</h2>
+      <figure class="screen">
+        <p id="empty">אין עדיין תמונה פעילה.</p>
+        <img id="active" alt="התמונה הפעילה כפי שהיא נראית במסך האנכי" hidden>
+      </figure>
+    </section>
+    <section>
+      <h2>חמש ההעלאות האחרונות</h2>
+      <ol id="recent" aria-label="מהתמונה החדשה ביותר לישנה ביותר"></ol>
+    </section>
+  </main>
+</body>
+</html>
